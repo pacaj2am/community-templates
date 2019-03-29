@@ -1,0 +1,52 @@
+diff --git a/provisioning_templates/snippet/preseed_networking_setup.erb b/provisioning_templates/snippet/preseed_networking_setup.erb
+index 6fbeec6..40ce000 100644
+--- a/provisioning_templates/snippet/preseed_networking_setup.erb
++++ b/provisioning_templates/snippet/preseed_networking_setup.erb
+@@ -7,17 +7,41 @@ description: this will configure your host networking, it configures your primar
+     as other configures NICs. It supports physical, VLAN and Alias interfaces. It's intended to be
+     called in your preseed finish template.
+ %>
++<% is_ubuntu = @host.operatingsystem.family == 'Ubuntu' -%>
++<% os_major = @host.operatingsystem.major.to_i -%>
++<% os_minor = @host.operatingsystem.minor.to_i -%>
+ <% host_subnet = @host.subnet -%>
+ <% host_dhcp = host_subnet.nil? ? false : host_subnet.dhcp_boot_mode? -%>
+ <% host_subnet6 = @host.subnet6 -%>
+ <% host_dhcp6 = host_subnet6.nil? ? false : host_subnet6.dhcp_boot_mode? -%>
+ 
+ real=`ip -o link | awk '/<%= @host.mac -%>/ {print $2;}' | sed s/://`
++<%# Ubuntu 18.04 and newer uses netplan instead of /etc/network/interfaces -%>
++<% if is_ubuntu && os_major > 17 -%>
++cat << EOF > /etc/netplan/01-netcfg.yaml
++# This file describes the network interfaces available on your system
++# For more information, see netplan(5).
++network:
++  version: 2
++  renderer: networkd
++  ethernets:
++    $real:
++<% if host_dhcp -%>
++      dhcp4: true
++<% else -%>
++      addresses: [ <%= @host.ip %>/<%= host_subnet.cidr %><% if @host.ip6 && host_subnet6 && !host_dhcp6 -%>, <%= @host.ip6 %>/<%= host_subnet6.cidr %><% end -%> ]
++      gateway4: <%= host_subnet.gateway %>
++      nameservers:
++          search: [ <%= @host.domain %> ]
++          addresses: [ <%= host_subnet.dns_primary %><% if host_subnet.dns_secondary -%> ,<%= host_subnet.dns_secondary %><% end -%> ]
++EOF
++
++<% end -%>
++<% else -%>
+ cat << EOF > /etc/network/interfaces
+ #loopback
+ auto lo
+ iface lo inet loopback
+-
+ #<%= @host.primary_interface.identifier %>
+ auto $real
+ allow-hotplug $real
+@@ -71,3 +95,4 @@ iface $real inet6 static
+ <% end -%>
+ EOF
+ <% end -%>
++<% end -%>
